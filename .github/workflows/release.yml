@@ -1,0 +1,64 @@
+name: Publicar executáveis
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux
+            archive: duelo-veyrion-linux-x64.tar.gz
+          - os: windows-latest
+            artifact: windows
+            archive: duelo-veyrion-windows-x64.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Gerar pacote Linux
+        if: runner.os == 'Linux'
+        run: bash scripts/build_linux.sh
+
+      - name: Gerar pacote Windows
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: scripts\build_windows.bat
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacote-${{ matrix.artifact }}
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Criar Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pacote-*
+          merge-multiple: true
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*
