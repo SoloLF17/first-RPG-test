@@ -10,6 +10,13 @@ from .personagem import Guerreiro, Mago, Arqueiro, VIDA_PADRAO
 from .motor import MotorBatalha
 from .animacoes import Animador, desenhar_derrota
 from .icones import desenhar_icone, CORES as CORES_ICONE
+from .personagem2d import Personagem2D
+
+SPRITE_POR_CLASSE = {
+    Guerreiro: "guerreiro",
+    Mago: "mago",
+    Arqueiro: "arqueiro",
+}
 
 # ---------- tema (desafio 6.1: janela e cores novas) ----------
 LARGURA, ALTURA = 960, 640
@@ -91,6 +98,9 @@ class Jogo:
         self.animador = Animador()
         self.pendente_passar_turno = False
         self.botoes_acao = []
+        # sprites 2D animados dos lutadores (pack de personagens)
+        self.sprites_lutadores = [None, None]
+        self._ultimo_tick_sprite = pygame.time.get_ticks()
 
         # passo 9: rounds, mortes e histórico
         self.mortes = {}            # índice -> instante em que a vida chegou a 0
@@ -256,6 +266,13 @@ class Jogo:
         self.mortes = {}
         self.historico = []
         self.inicio_round = pygame.time.get_ticks()
+        # instancia sprites 2D para os dois lutadores
+        nomes = [SPRITE_POR_CLASSE[type(self.motor.jogadores[0])],
+                 SPRITE_POR_CLASSE[type(self.motor.jogadores[1])]]
+        self.sprites_lutadores = [Personagem2D(nomes[0], fps=8),
+                                  Personagem2D(nomes[1], fps=8)]
+        for s in self.sprites_lutadores:
+            s.play("idle")
 
     # ---------- utilitários ----------
 
@@ -598,23 +615,38 @@ class Jogo:
     def _desenhar_lutadores(self, m):
         for i, p in enumerate(m.jogadores):
             x, y = X_LADOS[i], 260
-            if not p.vivo and i in self.mortes:
-                # desafio 8.3: desliza para baixo e fica cinza
-                desenhar_derrota(self.tela, x, y, 90, 130,
-                                 CORES_LUTADOR[i], self.mortes[i])
+            sprite = (self.sprites_lutadores[i]
+                      if i < len(self.sprites_lutadores) else None)
+            flip = (i == 1)
+            if not p.vivo:
+                if i in self.mortes:
+                    # desafio 8.3: desliza para baixo
+                    pprog = min((pygame.time.get_ticks() - self.mortes[i]) / 700, 1.0)
+                    deslize = int(pprog * 70)
+                else:
+                    deslize = 0
+                if sprite is not None and sprite.animation != "defeat":
+                    sprite.play("defeat", loop=False)
+                if sprite is not None:
+                    sprite.draw(self.tela, (x, y + deslize), flip=flip)
             else:
                 dx = 0
                 if i == m.turno:       # avanço ida/volta de quem ataca (passo 8)
                     dx = self.animador.deslocamento_atacante() * (1 if i == 0 else -1)
-                rect = pygame.Rect(x - 45 + dx, y - 65, 90, 130)
-                pygame.draw.rect(self.tela, CORES_LUTADOR[i], rect,
-                                 border_radius=12)
+                if sprite is not None:
+                    # volta para idle quando não há animação em andamento
+                    if (not self.animador.rodando
+                            and sprite.animation not in ("idle", "victory")
+                            and not self.pendente_passar_turno):
+                        sprite.play("idle")
+                    sprite.draw(self.tela, (x + dx, y), flip=flip)
             rotulo = p.nome
             larg = self.fonte_pequena.size(rotulo)[0]
             self.texto(rotulo, self.fonte_pequena, BRANCO, (x - larg // 2, y + 75))
 
     def desenhar_batalha(self):
         m = self.motor
+        self.atualizar_sprites()
         self.desenhar_fundo()
 
         # moldura da arena e cabeçalho
@@ -843,10 +875,16 @@ class Jogo:
             return
         if isinstance(acao, Cura):
             self.animador.iniciar(acao.animacao, 0, f"+{acao.cura}")
+            anim_sprite = "heal"
         else:
             self.animador.iniciar(acao.animacao, acao.dano, f"-{acao.dano}")
+            anim_sprite = "special" if acao.dano >= 20 else "attack"
         if self.som_golpe is not None:       # desafio 9.5 (opcional)
             self.som_golpe.play()
+        sprite = (self.sprites_lutadores[self.motor.turno]
+                  if self.motor.turno < len(self.sprites_lutadores) else None)
+        if sprite is not None:
+            sprite.play(anim_sprite, loop=False)
         self.motor.escolher(indice)
         self.pendente_passar_turno = True
         self._registrar_mortes()
@@ -856,6 +894,22 @@ class Jogo:
         for i, p in enumerate(self.motor.jogadores):
             if not p.vivo and i not in self.mortes:
                 self.mortes[i] = pygame.time.get_ticks()
+                sprite = (self.sprites_lutadores[i]
+                          if i < len(self.sprites_lutadores) else None)
+                if sprite is not None:
+                    sprite.play("defeat", loop=False)
+
+    def atualizar_sprites(self, dt=None):
+        """Avança a animação dos sprites 2D (pygame)."""
+        if dt is None:
+            agora = pygame.time.get_ticks()
+            dt = (agora - self._ultimo_tick_sprite) / 1000.0
+            self._ultimo_tick_sprite = agora
+            if dt <= 0 or dt > 0.5:
+                dt = 1.0 / 60.0
+        for s in self.sprites_lutadores:
+            if s is not None:
+                s.update(dt)
 
     # ---------- passos por quadro (chamar antes de desenhar) ----------
 
@@ -865,6 +919,12 @@ class Jogo:
                 and not self.animador.rodando):
             self.motor.passar_turno()
             self.pendente_passar_turno = False
+            for i, s in enumerate(self.sprites_lutadores):
+                if (s is not None and self.motor is not None
+                        and i < len(self.motor.jogadores)
+                        and self.motor.jogadores[i].vivo
+                        and s.animation not in ("victory",)):
+                    s.play("idle")
 
     def passo_da_ia(self):
         """A CPU joga sozinha (só quando não há animação em andamento)."""
@@ -880,8 +940,14 @@ class Jogo:
         acao = self.motor.acoes()[indice]
         if isinstance(acao, Cura):
             self.animador.iniciar(acao.animacao, 0, f"+{acao.cura}")
+            anim_sprite = "heal"
         else:
             self.animador.iniciar(acao.animacao, acao.dano, f"-{acao.dano}")
+            anim_sprite = "special" if acao.dano >= 20 else "attack"
+        sprite = (self.sprites_lutadores[self.motor.turno]
+                  if self.motor.turno < len(self.sprites_lutadores) else None)
+        if sprite is not None:
+            sprite.play(anim_sprite, loop=False)
         self.motor.escolher(indice)
         self.pendente_passar_turno = True
         self._registrar_mortes()
@@ -897,6 +963,9 @@ class Jogo:
             self.mortes = {}
             self.pendente_passar_turno = False
             self.inicio_round = pygame.time.get_ticks()
+            for s in self.sprites_lutadores:
+                if s is not None:
+                    s.play("idle")
 
     # ---------- vitória (passo 9 + desafios 8.4 e 9.3) ----------
 
@@ -906,6 +975,13 @@ class Jogo:
         idx = 0 if m.placar[0] >= m.placar[1] else 1
         vencedor = m.jogadores[idx]
         salto = self.animador.deslocamento_pulo()    # desafio 8.4
+        sprite = (self.sprites_lutadores[idx]
+                  if idx < len(self.sprites_lutadores) else None)
+        if sprite is not None and sprite.animation != "victory":
+            sprite.play("victory", loop=True)
+        if sprite is not None:
+            self.atualizar_sprites()
+            sprite.draw(self.tela, (LARGURA // 2, 460 + salto))
 
         self.texto_centro(f"{vencedor.nome} venceu a partida!",
                           self.fonte_titulo, OURO, 40 + salto)
@@ -918,9 +994,6 @@ class Jogo:
             self.texto_centro(frase[:64], self.fonte_pequena, BRANCO,
                               186 + i * 24)
 
-        # vencedor "pulando" no centro da tela (desafio 8.4)
-        corpo = pygame.Rect(LARGURA // 2 - 45, 405 + salto, 90, 110)
-        pygame.draw.rect(self.tela, CORES_LUTADOR[idx], corpo, border_radius=14)
         nome = f"{vencedor.nome} ({type(vencedor).__name__})"
         larg = self.fonte_pequena.size(nome)[0]
         self.texto(nome, self.fonte_pequena, BRANCO,

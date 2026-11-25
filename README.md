@@ -11,6 +11,8 @@ vença a melhor de 1, 3 ou 5 rodadas.
 - Batalhas por turnos com ataques, cura e habilidades especiais.
 - Níveis de dificuldade, configurações de janela e atalhos personalizáveis.
 - Animações, efeitos visuais e retratos dos personagens.
+- Personagens 2D animados (idle, run, attack, special, heal, victory e defeat)
+  usando spritesheets do pack integrado ao Pygame.
 - Salvamento local das opções do jogo.
 
 ## Como jogar
@@ -56,6 +58,29 @@ Também é possível baixar os arquivos diretamente na página de [Releases](htt
 Extraia o arquivo e execute `DueloDeVeyrion` no Linux ou
 `DueloDeVeyrion.exe` no Windows.
 
+## Personagens 2D animados
+
+A versão clássica (2D) agora utiliza spritesheets animados para os três
+personagens (Guerreiro, Mago e Arqueiro). Cada personagem possui 7 animações
+com 6 quadros de 96x96 pixels:
+
+- `idle`, `run`, `attack`, `special`, `heal`, `victory` e `defeat`.
+
+Os sprites ficam em `jogo/assets/sprites/` e são carregados pela classe
+`Personagem2D` (disponível em `jogo.personagem2d` e aliases como
+`jogo.personagem_animator`). A API segue o padrão do pack original:
+
+```python
+from jogo.personagem2d import Personagem2D
+
+player = Personagem2D("mago", fps=8)
+player.play("attack", loop=False)
+player.update(1 / 60)
+```
+
+No jogo, as animações são disparadas automaticamente conforme a ação escolhida
+(ataque, golpe especial, cura), a derrota e a vitória.
+
 ## Executar a partir do código-fonte
 
 Para desenvolvimento, é necessário Python 3.10 ou superior:
@@ -68,6 +93,20 @@ python -m pip install -r requirements.txt
 python -m jogo
 ```
 
+## Protótipo da arena 3D
+
+A versão 3D fica separada da versão clássica e usa Ursina:
+
+```bash
+python -m pip install -r requirements.txt
+python -m arena3d
+```
+
+A arena 3D oferece menu, seleção de classe, modos 1x1, 2x2 e todos contra todos,
+IA, HUD, pausa, revanche, câmera de acompanhamento e regras testáveis sem janela.
+
+Os passos completos estão em [`passo/INDICE-ARENA-3D.md`](passo/INDICE-ARENA-3D.md).
+
 No Windows, a ativação correta é:
 
 ```powershell
@@ -77,7 +116,7 @@ No Windows, a ativação correta é:
 Para executar os testes:
 
 ```bash
-python -m unittest discover -s testes -p "test_*.py"
+python -m pytest -q
 ```
 
 ## Gerar executáveis
@@ -104,6 +143,7 @@ GitHub.
 ```text
 jogo/                  Código do jogo
 jogo/assets/           Imagens dos personagens
+jogo/assets/sprites/    Spritesheets animados dos personagens (2D)
 testes/                Testes automatizados
 scripts/               Builds e download dos pacotes
 .github/workflows/     Automação das Releases
